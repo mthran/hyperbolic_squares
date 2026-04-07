@@ -1,0 +1,11 @@
+*.DS_Store
+
+# Generated files
+/target
+/workspace
+/.signac
+/.row
+
+# Pixi environments
+.pixi/*
+!.pixi/config.toml
