@@ -1,5 +1,5 @@
 use anyhow::{Context, anyhow};
-use hoomd_geometry::{Volume, shape::Cuboid};
+use hoomd_geometry::{Volume, shape::EightEight};
 use hoomd_interaction::{
     MaximumInteractionRange, PairwiseCutoff,
     pairwise::Isotropic,
