@@ -16,7 +16,7 @@ use hoomd_utility::data::ParquetLogger;
 use log::{debug, info};
 use parquet_derive::ParquetRecordWriter;
 
-use crate::{LennardJonesModel, StatePoint};
+use crate::{HyperbolicSquaresModel, StatePoint};
 
 const MODEL_FILE: &str = "model.postcard";
 const TOTAL_STEPS: u64 = 100_000;
@@ -24,7 +24,7 @@ const GSD_WRITE_PERIOD: u64 = 100_000;
 const LOG_WRITE_PERIOD: u64 = 1_000;
 const WALL_TIME_BUFFER: f64 = 300.0;
 
-fn get_model() -> anyhow::Result<LennardJonesModel> {
+fn get_model() -> anyhow::Result<HyperbolicSquaresModel> {
     match fs::read(MODEL_FILE) {
         Ok(bytes) => {
             debug!("Continuing simulation from `{MODEL_FILE}`.");
@@ -39,7 +39,7 @@ fn get_model() -> anyhow::Result<LennardJonesModel> {
                 let state_point: StatePoint = serde_json::from_slice(&state_point_bytes)
                     .context("could not parse signac_statepoint.json")?;
                 let _ = HoomdGsdFile::create("trajectory.in-progress.gsd");
-                LennardJonesModel::new(state_point)
+                HyperbolicSquaresModel::new(state_point)
             }
             _ => Err(error).with_context(|| format!("Could not read `{MODEL_FILE}`")),
         },

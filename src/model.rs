@@ -1,61 +1,108 @@
 use anyhow::{Context, anyhow};
-use hoomd_geometry::{Volume, shape::EightEight};
+use hoomd_geometry::{Volume, shape::{EightEight, HyperbolicConvexPolytope}};
 use hoomd_interaction::{
     MaximumInteractionRange, PairwiseCutoff,
-    pairwise::Isotropic,
+    pairwise::{HardShape, Isotropic},
     univariate::{Expanded, LennardJones, OverlapPenalty},
 };
-use hoomd_mc::{Count, QuickCompress, QuickInsert, Sweep, Translate, Trial, Tune, UniformIn};
-use hoomd_microstate::{Microstate, SiteKey, boundary::Periodic, property::Point};
+use hoomd_manifold::{Hyperbolic, HyperbolicDisk, Minkowski};
+use hoomd_mc::{BodyDistribution, Count, QuickCompress, QuickInsert, Rotate, Sweep, Translate, Trial, Tune, UniformIn};
+use hoomd_microstate::{Body, Microstate, SiteKey, boundary::Periodic, property::OrientedHyperbolicPoint};
 use hoomd_simulation::{Simulation, macrostate::Isothermal};
-use hoomd_spatial::VecCell;
-use hoomd_vector::Cartesian;
+use hoomd_spatial::AllPairs;
+use hoomd_vector::Angle;
 use log::debug;
+use rand::{Rng, distr::Distribution};
 use serde::{Deserialize, Serialize};
+
+use crate::state_point;
 
 use super::StatePoint;
 
-const INITIAL_NUMBER_DENSITY: f64 = 0.2;
-const INITIAL_MAXIMUM_DISTANCE: f64 = 0.1;
-const RELAX_STEPS: u64 = 10_000;
+const NUM_STEPS: u64 = 10_000;
 
-type PositionVector = Cartesian<3>;
-type BodyProperties = Point<PositionVector>;
-type SiteProperties = Point<PositionVector>;
-type Boundary = Periodic<Cuboid>;
+type PositionVector = Hyperbolic<3>;
+type Orientation = Angle;
+type SiteProperties = OrientedHyperbolicPoint<3, Angle>;
+type BodyProperties = OrientedHyperbolicPoint<3, Angle>;
+type Boundary = Periodic<EightEight>;
 
 #[derive(Serialize, Deserialize)]
 pub enum Phase {
     Initialize,
-    Relax,
+    Crunch,
     Equilibrate,
 }
 
+#[allow(dead_code)]
+#[derive(serde::Deserialize)]
+struct UniformHyperbolic<S> {
+    template_sites: Vec<S>,
+}
+
+impl BodyDistribution<Body<OrientedHyperbolicPoint<3, Angle>>>
+    for UniformHyperbolic<OrientedHyperbolicPoint<3, Angle>>
+{
+    #[inline]
+    fn sample<R: Rng + ?Sized>(
+        &self,
+        _index: usize,
+        rng: &mut R,
+    ) -> Body<
+        OrientedHyperbolicPoint<3, Angle>,
+        OrientedHyperbolicPoint<3, Angle>,
+    > {
+        let initial_spacing = 1.4;
+        let sample_disk = HyperbolicDisk {
+            disk_radius: initial_spacing.try_into().expect("positive number"),
+            point: Hyperbolic::<3>::from_minkowski_coordinates(
+                Minkowski::from([
+                    0.00001,
+                    0.00001,
+                    f64::sqrt(2.0 * (0.00001_f64).powi(2) + RHO.powi(2)),
+                ]),
+            ),
+        };
+        let new_point: Hyperbolic<3> = Hyperbolic::from_minkowski_coordinates(
+            *sample_disk.sample(rng).point()
+        );
+        //let new_angle: Angle = rng.random();
+        let body_properties = OrientedHyperbolicPoint {
+            position: new_point,
+            orientation: Angle::default(), //new_angle,
+        };
+        let site_properties = OrientedHyperbolicPoint {
+            position: Hyperbolic::<3>::default(),
+            orientation: Angle::default(), //new_angle,
+        };
+        Body {
+            properties: body_properties,
+            sites: vec![site_properties],
+        }
+    }
+}
 /// The Lennard-Jones simulation model.
 #[derive(Serialize, Deserialize)]
-pub struct LennardJonesModel {
-    pub microstate: Microstate<BodyProperties, SiteProperties, VecCell<SiteKey, 3>, Boundary>,
-    pub translate_sweep: Sweep<Translate<PositionVector>>,
-    pub hamiltonian: PairwiseCutoff<Isotropic<LennardJones>>,
-    pub quick_insert: QuickInsert<UniformIn<SiteProperties, Boundary>>,
-    pub quick_compress: QuickCompress<Boundary>,
-    pub overlap_penalty_hamiltonian: PairwiseCutoff<Isotropic<Expanded<OverlapPenalty>>>,
+pub struct HyperbolicSquaresModel {
+    pub microstate: Microstate<BodyProperties, SiteProperties, AllPairs<SiteKey>, Boundary>,
+    pub translate_sweep: Sweep<Translate<OrientedHyperbolicPoint<3,Angle>>>,
+    pub rotate_sweep: Sweep<Rotate<Orientation>>,
+    pub hamiltonian: PairwiseCutoff<HardShape<HyperbolicConvexPolytope<3>>>,
+    pub quick_insert: QuickInsert<UniformHyperbolic<SiteProperties>>,
+    pub insert_hamiltonian: PairwiseCutoff<Isotropic<LennardJones>>,
     pub macrostate: Isothermal,
     pub translate_count: Count,
     pub phase: Phase,
     pub relax_step: u64,
+    pub end_size: f64,
 }
 
-impl Simulation for LennardJonesModel {
+impl Simulation for HyperbolicSquaresModel {
     #[inline]
     fn advance(&mut self) -> anyhow::Result<()> {
-        if self.microstate.step().is_multiple_of(300) {
-            self.microstate.sort_sites();
-        }
-
         match self.phase {
             Phase::Initialize => self.initialize().context("failed to initialize")?,
-            Phase::Relax => self.relax(),
+            Phase::Crunch => self.crunch(),
             Phase::Equilibrate => self.equilibrate(),
         }
 
@@ -70,140 +117,136 @@ impl Simulation for LennardJonesModel {
     }
 }
 
-impl LennardJonesModel {
+impl HyperbolicSquaresModel {
     pub fn new(state_point: StatePoint) -> anyhow::Result<Self> {
-        let macrostate = Isothermal {
-            temperature: state_point.temperature,
-        };
+        let maximum_distance = state_point.final_size * 0.001;
+        let maximum_rotation = 0.01;
+        let macrostate = Isothermal { temperature: 1.0 };
 
-        let hamiltonian = PairwiseCutoff(Isotropic {
-            interaction: LennardJones {
-                epsilon: state_point.epsilon,
-                sigma: state_point.sigma,
-            },
-            r_cut: 2.5 * state_point.sigma,
-        });
-
-        let initial_box_volume = state_point.n as f64 / INITIAL_NUMBER_DENSITY;
-        let initial_box_edge_length = initial_box_volume.cbrt();
-        let cuboid = Cuboid::with_equal_edges(initial_box_edge_length.try_into()?);
-        let periodic_cuboid = Periodic::new(hamiltonian.maximum_interaction_range(), cuboid)?;
-
-        let vec_cell = VecCell::builder()
-            .nominal_search_radius(hamiltonian.maximum_interaction_range().try_into()?)
-            .build();
+        let end_square =
+            HyperbolicConvexPolytope::<3>::regular(4, state_point.final_size);
+        let hamiltonian = PairwiseCutoff(HardShape(end_square.clone()));
+        let boundary = Periodic::new(0.6, EightEight {})?;
+        //let allpairs = AllPairs
         let microstate = Microstate::builder()
+            //.spatial_data(allpairs)
             .seed(state_point.replicate)
-            .boundary(periodic_cuboid)
-            .spatial_data(vec_cell)
+            .boundary(boundary)
             .try_build()?;
 
-        let translate = Translate::with_maximum_distance(INITIAL_MAXIMUM_DISTANCE.try_into()?);
-        let translate_sweep = Sweep(translate);
+        let hyp_translate =
+            Translate::with_maximum_distance(maximum_distance.try_into()?);
+        let translate_sweep = Sweep(hyp_translate);
 
-        let target_box_volume = state_point.n as f64 / state_point.number_density;
-        let quick_compress = QuickCompress::with_target_volume(target_box_volume.try_into()?);
+        let rotate =
+            Rotate::with_maximum_rotation(maximum_rotation.try_into()?);
+        let rotate_sweep = Sweep(rotate);
 
-        let distribution = UniformIn {
-            boundary: microstate.boundary().clone(),
-            template_sites: vec![SiteProperties::default()],
+        let distribution = UniformHyperbolic {
+            template_sites: vec![OrientedHyperbolicPoint::<3, Angle>::default()],
         };
         let quick_insert = QuickInsert::new(distribution, state_point.n);
 
-        let overlap_penalty = Isotropic {
-            interaction: Expanded {
-                delta: 1.0,
-                f: OverlapPenalty::default(),
-            },
-            r_cut: 1.0,
+        let lj: LennardJones = LennardJones {
+            epsilon: 10.0,
+            sigma: state_point.final_size * 0.2,
         };
 
-        let overlap_penalty_hamiltonian = PairwiseCutoff(overlap_penalty);
+        let insert_hamiltonian = PairwiseCutoff(Isotropic {
+            interaction: lj,
+            r_cut: 1.0,
+        });
 
-        Ok(LennardJonesModel {
+        Ok(HyperbolicSquaresModel {
             microstate,
-            overlap_penalty_hamiltonian,
             hamiltonian,
             translate_sweep,
-            quick_compress,
+            rotate_sweep,
             quick_insert,
+            insert_hamiltonian,
             macrostate,
             phase: Phase::Initialize,
             translate_count: Count::default(),
             relax_step: 0,
+            end_size: state_point.final_size,
         })
     }
 
     fn initialize(&mut self) -> anyhow::Result<()> {
-        if self.quick_insert.is_complete() {
-            self.quick_compress.apply(
-                &mut self.microstate,
-                &self.overlap_penalty_hamiltonian,
-                |_| true,
-            );
-        } else {
-            self.quick_insert
-                .apply(&mut self.microstate, &self.overlap_penalty_hamiltonian);
-        }
+        self.quick_insert
+            .apply(&mut self.microstate, &self.insert_hamiltonian);
 
-        self.translate_count += self.translate_sweep.apply(
+        self.translate_sweep.apply(
             &mut self.microstate,
-            &self.overlap_penalty_hamiltonian,
+            &self.insert_hamiltonian,
             &Isothermal { temperature: 1.0 },
         );
 
-        if self.quick_compress.is_complete() {
-            self.translate_sweep.tune_default(
-                &self.microstate,
-                &self.hamiltonian,
-                &self.macrostate,
-            );
+        self.rotate_sweep.apply(
+            &mut self.microstate,
+            &self.insert_hamiltonian,
+            &Isothermal { temperature: 1.0 },
+        );
 
-            self.phase = Phase::Relax;
-            debug!(
+        if self.quick_insert.is_complete() {
+            self.phase = Phase::Crunch;
+            println!(
                 "Initialization complete at step {}.",
                 self.microstate.step()
             );
         }
 
-        if self.step() >= 20_000 {
+        if self.step() >= 10_000 {
             let n = self.microstate.bodies().len();
-            let target_n = self.quick_insert.target();
-            let volume = self.microstate.boundary().volume();
-            let target_volume = self.quick_compress.target_volume();
+            let target = self.quick_insert.target();
+            let step = self.microstate.step();
             return Err(anyhow!(
-                "inserted {n}/{target_n} bodies and compressed to {volume} / {target_volume}"
+                "{n} of {target} bodies inserted after {step} steps"
             ));
         }
 
         Ok(())
     }
 
-    fn relax(&mut self) {
-        self.translate_count +=
-            self.translate_sweep
-                .apply(&mut self.microstate, &self.hamiltonian, &self.macrostate);
+    fn crunch(&mut self) {
+        let step = self.microstate.step();
+        let radius = self.end_size * (0.)
+            * ((step as f64) / (NUM_STEPS as f64))
+            + 0.1 * self.end_size;
 
-        self.relax_step += 1;
-        if self.relax_step == RELAX_STEPS {
-            debug!(
-                "Relax phase complete at step {}, retuning trial moves.",
-                self.microstate.step()
-            );
-            self.translate_sweep.tune_default(
-                &self.microstate,
-                &self.hamiltonian,
-                &self.macrostate,
-            );
+        let crunch_square =
+            HyperbolicConvexPolytope::<3>::regular(4, radius);
+        let crunch_hamiltonian =
+            PairwiseCutoff(HardShape(crunch_square.clone()));
 
+        self.translate_sweep.apply(
+            &mut self.microstate,
+            &crunch_hamiltonian,
+            &Isothermal { temperature: 1.0 },
+        );
+
+        self.rotate_sweep.apply(
+            &mut self.microstate,
+            &crunch_hamiltonian,
+            &Isothermal { temperature: 1.0 },
+        );
+
+        if step > NUM_STEPS {
             self.phase = Phase::Equilibrate;
         }
     }
 
     fn equilibrate(&mut self) {
-        self.translate_count +=
-            self.translate_sweep
-                .apply(&mut self.microstate, &self.hamiltonian, &self.macrostate);
+        self.translate_sweep.apply(
+            &mut self.microstate,
+            &self.hamiltonian,
+            &self.macrostate,
+        );
+        self.rotate_sweep.apply(
+            &mut self.microstate,
+            &self.hamiltonian,
+            &self.macrostate,
+        );
     }
 
     pub fn clear_move_counts(&mut self) {

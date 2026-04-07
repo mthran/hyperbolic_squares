@@ -499,6 +499,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi 6.0.0",
+ "rand_core",
  "wasip2",
  "wasip3",
 ]
@@ -748,6 +749,7 @@ dependencies = [
  "hoomd-geometry",
  "hoomd-gsd",
  "hoomd-interaction",
+ "hoomd-manifold",
  "hoomd-mc",
  "hoomd-microstate",
  "hoomd-simulation",
@@ -758,6 +760,7 @@ dependencies = [
  "parquet",
  "parquet_derive",
  "postcard",
+ "rand",
  "serde",
  "serde_json",
 ]

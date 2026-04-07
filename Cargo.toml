@@ -4,15 +4,16 @@ edition = "2024"
 publish = false
 
 [dependencies]
-hoomd-geometry = "1.0.0"
-hoomd-gsd = "1.0.0"
-hoomd-interaction = "1.0.0"
-hoomd-mc = "1.0.0"
-hoomd-microstate = "1.0.0"
-hoomd-simulation = "1.0.0"
-hoomd-spatial = "1.0.0"
-hoomd-utility = "1.0.0"
-hoomd-vector = "1.0.0"
+hoomd-geometry = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-geometry" }
+hoomd-gsd = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-gsd" }
+hoomd-interaction = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-interaction" }
+hoomd-manifold = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-manifold" }
+hoomd-mc = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-mc" }
+hoomd-microstate = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-microstate" }
+hoomd-simulation = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-simulation" }
+hoomd-spatial = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-spatial" }
+hoomd-utility = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-utility" }
+hoomd-vector = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-vector" }
 
 anyhow = "1.0.100"
 clap = {version = "4.5.48", features = ["derive"]}
@@ -22,5 +23,6 @@ log = "0.4.28"
 postcard = {version = "1.1.3", default-features = false, features = ["use-std"]}
 parquet = { version = "58.0.0", default-features=false }
 parquet_derive = { version = "58.0.0", default-features=false }
+rand = "0.10.0"
 serde = { version = "1.0.228", features = ["derive"]}
 serde_json = "1.0.149"
