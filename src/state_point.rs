@@ -4,9 +4,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 pub struct StatePoint {
     pub n: usize,
-    pub epsilon: f64,
-    pub sigma: f64,
-    pub temperature: f64,
-    pub number_density: f64,
+    pub packing_fraction: f64,
     pub replicate: u32,
 }
