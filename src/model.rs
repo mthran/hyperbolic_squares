@@ -1,27 +1,23 @@
 use anyhow::{Context, anyhow};
-use hoomd_geometry::{Volume, shape::{EightEight, HyperbolicConvexPolytope}};
+use hoomd_geometry::{shape::{EightEight, HyperbolicConvexPolytope}};
 use hoomd_interaction::{
-    MaximumInteractionRange, PairwiseCutoff,
+    PairwiseCutoff,
     pairwise::{HardShape, Isotropic},
-    univariate::{Expanded, LennardJones, OverlapPenalty},
+    univariate::LennardJones,
 };
 use hoomd_manifold::{Hyperbolic, HyperbolicDisk, Minkowski};
-use hoomd_mc::{BodyDistribution, Count, QuickCompress, QuickInsert, Rotate, Sweep, Translate, Trial, Tune, UniformIn};
+use hoomd_mc::{BodyDistribution, Count, QuickInsert, Rotate, Sweep, Translate, Trial, Tune};
 use hoomd_microstate::{Body, Microstate, SiteKey, boundary::Periodic, property::OrientedHyperbolicPoint};
 use hoomd_simulation::{Simulation, macrostate::Isothermal};
 use hoomd_spatial::AllPairs;
 use hoomd_vector::Angle;
-use log::debug;
+//use log::debug;
 use rand::{Rng, distr::Distribution};
 use serde::{Deserialize, Serialize};
-
-use crate::state_point;
-
 use super::StatePoint;
 
 const NUM_STEPS: u64 = 10_000;
 
-type PositionVector = Hyperbolic<3>;
 type Orientation = Angle;
 type SiteProperties = OrientedHyperbolicPoint<3, Angle>;
 type BodyProperties = OrientedHyperbolicPoint<3, Angle>;
@@ -35,8 +31,8 @@ pub enum Phase {
 }
 
 #[allow(dead_code)]
-#[derive(serde::Deserialize)]
-struct UniformHyperbolic<S> {
+#[derive(Serialize, Deserialize)]
+pub struct UniformHyperbolic<S> {
     template_sites: Vec<S>,
 }
 
@@ -59,7 +55,7 @@ impl BodyDistribution<Body<OrientedHyperbolicPoint<3, Angle>>>
                 Minkowski::from([
                     0.00001,
                     0.00001,
-                    f64::sqrt(2.0 * (0.00001_f64).powi(2) + RHO.powi(2)),
+                    f64::sqrt(2.0 * (0.00001_f64).powi(2) + 1.0),
                 ]),
             ),
         };
@@ -93,8 +89,8 @@ pub struct HyperbolicSquaresModel {
     pub macrostate: Isothermal,
     pub translate_count: Count,
     pub phase: Phase,
-    pub relax_step: u64,
     pub end_size: f64,
+    pub current_size: f64,
 }
 
 impl Simulation for HyperbolicSquaresModel {
@@ -119,7 +115,7 @@ impl Simulation for HyperbolicSquaresModel {
 
 impl HyperbolicSquaresModel {
     pub fn new(state_point: StatePoint) -> anyhow::Result<Self> {
-        let maximum_distance = state_point.final_size * 0.001;
+        let maximum_distance = state_point.final_size * 0.05;
         let maximum_rotation = 0.01;
         let macrostate = Isothermal { temperature: 1.0 };
 
@@ -167,8 +163,8 @@ impl HyperbolicSquaresModel {
             macrostate,
             phase: Phase::Initialize,
             translate_count: Count::default(),
-            relax_step: 0,
             end_size: state_point.final_size,
+            current_size: 0.1 * state_point.final_size,
         })
     }
 
@@ -210,7 +206,7 @@ impl HyperbolicSquaresModel {
 
     fn crunch(&mut self) {
         let step = self.microstate.step();
-        let radius = self.end_size * (0.)
+        let radius = self.end_size * (0.1)
             * ((step as f64) / (NUM_STEPS as f64))
             + 0.1 * self.end_size;
 
@@ -219,6 +215,9 @@ impl HyperbolicSquaresModel {
         let crunch_hamiltonian =
             PairwiseCutoff(HardShape(crunch_square.clone()));
 
+        // update current radius
+        self.current_size = radius;
+        
         self.translate_sweep.apply(
             &mut self.microstate,
             &crunch_hamiltonian,
@@ -232,6 +231,11 @@ impl HyperbolicSquaresModel {
         );
 
         if step > NUM_STEPS {
+            self.translate_sweep.tune_default(
+                &self.microstate,
+                &self.hamiltonian,
+                &self.macrostate,
+            );
             self.phase = Phase::Equilibrate;
         }
     }

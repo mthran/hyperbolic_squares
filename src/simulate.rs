@@ -7,9 +7,7 @@ use std::{
 };
 
 use anyhow::Context;
-use hoomd_geometry::Volume;
 use hoomd_gsd::hoomd::HoomdGsdFile;
-use hoomd_interaction::TotalEnergy;
 use hoomd_microstate::AppendMicrostate;
 use hoomd_simulation::Simulation;
 use hoomd_utility::data::ParquetLogger;
@@ -50,9 +48,8 @@ fn get_model() -> anyhow::Result<HyperbolicSquaresModel> {
 struct LogRecord {
     step: u64,
     wall_time: f64,
-    potential_energy: f64,
-    volume: f64,
     translate_acceptance: f64,
+    square_radius: f64
 }
 
 pub fn simulate_one(directory: &Path) -> anyhow::Result<()> {
@@ -99,9 +96,8 @@ pub fn simulate_one(directory: &Path) -> anyhow::Result<()> {
             let log_record = LogRecord {
                 step: model.step(),
                 wall_time,
-                potential_energy: model.hamiltonian.total_energy(&model.microstate),
-                volume: model.microstate.boundary().volume(),
                 translate_acceptance: model.translate_count.acceptance_ratio().unwrap_or(0.0),
+                square_radius: model.current_size,
             };
 
             parquet_logger

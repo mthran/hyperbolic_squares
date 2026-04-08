@@ -4,16 +4,16 @@ edition = "2024"
 publish = false
 
 [dependencies]
-hoomd-geometry = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-geometry" }
-hoomd-gsd = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-gsd" }
-hoomd-interaction = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-interaction" }
-hoomd-manifold = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-manifold" }
-hoomd-mc = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-mc" }
-hoomd-microstate = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-microstate" }
-hoomd-simulation = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-simulation" }
-hoomd-spatial = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-spatial" }
-hoomd-utility = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-utility" }
-hoomd-vector = { version = "1.0.0", path = "../../Documents/GitHub/hoomd-rs/hoomd-vector" }
+hoomd-geometry = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-geometry" }
+hoomd-gsd = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-gsd" }
+hoomd-interaction = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-interaction" }
+hoomd-manifold = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-manifold" }
+hoomd-mc = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-mc" }
+hoomd-microstate = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-microstate" }
+hoomd-simulation = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-simulation" }
+hoomd-spatial = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-spatial" }
+hoomd-utility = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-utility" }
+hoomd-vector = { version = "1.0.0", path = "../../../Documents/GitHub/hoomd-rs/hoomd-vector" }
 
 anyhow = "1.0.100"
 clap = {version = "4.5.48", features = ["derive"]}
